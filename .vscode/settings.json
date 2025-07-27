@@ -12,6 +12,16 @@
 		"raymath.h": "c",
 		"math.h": "c",
 		"corecrt_math.h": "c",
-		"random": "c"
+		"random": "c",
+		"algorithm": "c",
+		"charconv": "c",
+		"format": "c",
+		"limits": "c",
+		"utility": "c",
+		"xlocale": "c",
+		"xloctime": "c",
+		"xmemory": "c",
+		"xstring": "c",
+		"xutility": "c"
 	}
 }
