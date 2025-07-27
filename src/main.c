@@ -11,9 +11,13 @@ by Jeffery Myers is marked with CC0 1.0. To view a copy of this license, visit h
 #include <time.h>
 #include <stdlib.h>
 #include <stdio.h>
+#include <float.h>
 
 #include "rlgl.h"
 #include "raymath.h"
+
+#define RAYGUI_IMPLEMENTATION
+#include "raygui.h" 
 
 #include "resource_dir.h"	// utility header for SearchAndSetResourceDir
 #include <math.h>
@@ -53,25 +57,42 @@ struct Pose {
 #define LIDAR_ANGULAR_RESOLUTION 2 * PI / NUM_LIDAR_SCANS // Angular resolution of LiDAR in radians 
 #endif
 
+#define REAL_GRID_SIZE 0.3 // Represents the true size of a grid cell in meters
+#define REAL_GRID_SIZE_2 REAL_GRID_SIZE / 2.0f // Represents the true size of a grid cell in meters
 
-void GenerateObstacles(bool occupancyGrid[][GRID_HEIGHT], int obtacleLocations[][2], Rectangle * obstacleCollisions) {
+#define PIXEL_SCALE  GRID_SIZE / REAL_GRID_SIZE // Represents the gridsize to pixel scaling for the motion controlling in meters
+
+#define REAL_PLAYER_SIZE 0.2 // Dimension of the robot in meters
+#define REAL_PLAYER_SIZE_2 REAL_PLAYER_SIZE / 2.0f
+#define PLAYER_SIZE REAL_PLAYER_SIZE * PIXEL_SCALE // Size of the robot in pixel size
+
+
+void GenerateObstacles(int occupancyGrid[][GRID_HEIGHT], int obtacleLocations[][2], Rectangle * obstacleCollisions, Vector2 obstacleVertices[][4]) {
 	for(int i= 0; i < NUM_OBSTACLES; ++i){
 		int rx, ry;
 
 		do{
 			rx = rand() % GRID_WIDTH; 
 			ry = rand() % GRID_HEIGHT; 
-		}while(occupancyGrid[rx][ry]);
+		}while(occupancyGrid[rx][ry] != -1);
 
-		occupancyGrid[rx][ry] = true;
+		occupancyGrid[rx][ry] = i;
 
 		obtacleLocations[i][0] = rx;      // Returns a pseudo-random integer between 0 and gridWidth.
 		obtacleLocations[i][1] = ry; // Returns a pseudo-random integer between 0 and gridHeight.
 
-		obstacleCollisions[i].x = (float) rx * GRID_SIZE;
-		obstacleCollisions[i].y = (float) ry * GRID_SIZE;
+		obstacleCollisions[i].x = (float)rx * GRID_SIZE;
+		obstacleCollisions[i].y = (float)ry * GRID_SIZE;
 		obstacleCollisions[i].width = (float) GRID_SIZE;
 		obstacleCollisions[i].height = (float) GRID_SIZE;
+
+		const float realRx = rx * REAL_GRID_SIZE;
+		const float realRy = ry * REAL_GRID_SIZE;
+
+		obstacleVertices[i][0] = (Vector2){realRx                 , realRy};
+		obstacleVertices[i][1] = (Vector2){realRx + REAL_GRID_SIZE, realRy};
+		obstacleVertices[i][2] = (Vector2){realRx + REAL_GRID_SIZE, realRy + REAL_GRID_SIZE};
+		obstacleVertices[i][3] = (Vector2){realRx                 , realRy + REAL_GRID_SIZE};
 
 		printf("Obstacle %d: (%d, %d)\n", i, rx, ry);		
 	}
@@ -181,60 +202,279 @@ void DrawObstacles(const Rectangle* obstacles){
 	}
 }
 
-#define DT 0.1
+void UpdatePlayerVertices(const struct Pose* pose,  Vector2* vertices){
+	Vector2 topLeft = { 0 };
+    Vector2 topRight = { 0 };
+    Vector2 bottomLeft = { 0 };
+    Vector2 bottomRight = { 0 };
 
-#define REAL_GRID_SIZE 0.3 // Represents the true size of a grid cell in meters
+    // Only calculate rotation if needed
+    if (pose->theta == 0.0f)
+    {
+        float x = pose->x;
+        float y = pose->y;
+        topLeft = (Vector2){ x - REAL_PLAYER_SIZE_2, y + REAL_PLAYER_SIZE_2 };
+        topRight = (Vector2){ x + REAL_PLAYER_SIZE, y + REAL_PLAYER_SIZE_2 };
+        bottomLeft = (Vector2){ x - REAL_PLAYER_SIZE_2, y - REAL_PLAYER_SIZE };
+        bottomRight = (Vector2){ x + REAL_PLAYER_SIZE, y - REAL_PLAYER_SIZE };
+    }
+    else
+    {
+        float sinRotation = sinf(pose->theta);
+        float cosRotation = cosf(pose->theta);
+        float x = pose->x;
+        float y = pose->y;
+        float dx = REAL_PLAYER_SIZE_2;
+        float dy = REAL_PLAYER_SIZE_2;
 
-#define PIXEL_SCALE  GRID_SIZE / REAL_GRID_SIZE // Represents the gridsize to pixel scaling for the motion controlling in meters
+		// Rotation by 0
+        topRight.x = x + dx*cosRotation - dy*sinRotation;
+        topRight.y = y + dx*sinRotation + dy*cosRotation;
 
-void UpdatePlayerState(struct Pose* playerState, const Vector2* command){
+		// Rotation by pi /2
+        topLeft.x = x - dx*sinRotation - dy*cosRotation;
+        topLeft.y = y + dx*cosRotation - dy*sinRotation;
+
+        bottomLeft.x = x - dx*cosRotation + dy*sinRotation;
+        bottomLeft.y = y - dx*sinRotation - dy*cosRotation;
+
+        bottomRight.x = x + dx*sinRotation + dy*cosRotation;
+        bottomRight.y = y - dx*cosRotation + dy*sinRotation;
+    }
+
+	vertices[0] = topLeft;
+	vertices[1] = topRight;
+	vertices[2] = bottomRight;
+	vertices[3] = bottomLeft;
+}
+
+void UpdatePlayerState(struct Pose* playerState, const Vector2* command, Vector2* vertices, const float dt){
 
 
 	// Differential Drive motion model
-	playerState->x += (command->x * cosf(playerState->theta) * DT);
-	playerState->y += (command->x * sinf(playerState->theta)* DT);
-	playerState->theta += (command->y * DT); // Heading negated to properlly define the right hand rule
+	playerState->x += (command->x * cosf(playerState->theta) * dt);
+	playerState->y += (command->x * sinf(playerState->theta)* dt);
+	playerState->theta += (command->y * dt); // Heading negated to properlly define the right hand rule
+
+	UpdatePlayerVertices(playerState, vertices);
 
 	// printf("Player: (x: %f y: %f theta: %f) \n", playerState->x, playerState->y, playerState->theta * RAD2DEG);
 }
 
-#define REAL_PLAYER_SIZE 0.2 // Dimension of the robot in meters
-#define PLAYER_SIZE REAL_PLAYER_SIZE * PIXEL_SCALE // Size of the robot in pixel size
-
-void DrawPlayer(const struct Pose* robotPosition, const Vector2* robotVelocity){
+void DrawPlayer(const struct Pose* robotPosition, const Vector2* robotVelocity, const Vector2* vertices, bool hasCollided){
 
 	Rectangle robot = {robotPosition->x * PIXEL_SCALE, robotPosition->y * PIXEL_SCALE, PLAYER_SIZE, PLAYER_SIZE};
 	Vector2 origin = {robot.width/2.0f, robot.height / 2.0f};
 
-	DrawRectanglePro(
-		robot,
-		origin,
-		robotPosition->theta * RAD2DEG,
-		BLACK
-	);
+	// DrawRectanglePro(
+	// 	robot,
+	// 	origin,
+	// 	robotPosition->theta * RAD2DEG,
+	// 	hasCollided? RED: BLACK
+	// );
 
 	Vector2 start = {robot.x, robot.y};
 	Vector2 end = {robot.x +  PLAYER_SIZE /2.0f * cosf(robotPosition->theta), 
 		           robot.y +  PLAYER_SIZE /2.0f * sinf(robotPosition->theta)};
 	
 	DrawLineEx(start, end, 2, GREEN);
+
+	for(int i = 0; i < 4; ++i){
+		DrawLineEx((Vector2){
+			vertices[i].x * PIXEL_SCALE,
+			vertices[i].y * PIXEL_SCALE,
+		}, 
+		(Vector2){
+			vertices[(i + 1) % 4].x * PIXEL_SCALE,
+			vertices[(i + 1) % 4].y * PIXEL_SCALE,
+		}, 2, hasCollided? RED: BLUE);
+	}
 }
 
-void RandomPlayerStart(struct Pose* playerPosition, bool occupancyGrid[][GRID_HEIGHT]){
+void RandomPlayerStart(struct Pose* playerPosition, int occupancyGrid[][GRID_HEIGHT]){
 		int rx, ry;
 
 		do{
 			rx = rand() % GRID_WIDTH; 
 			ry = rand() % GRID_HEIGHT; 
-		}while(occupancyGrid[rx][ry]);
+		}while(occupancyGrid[rx][ry] != -1);
 
-		playerPosition->x = rx * REAL_GRID_SIZE + REAL_GRID_SIZE /2.0f;
-		playerPosition->y = ry * REAL_GRID_SIZE + REAL_GRID_SIZE /2.0f;
+		playerPosition->x = rx * REAL_GRID_SIZE + REAL_GRID_SIZE_2;
+		playerPosition->y = ry * REAL_GRID_SIZE + REAL_GRID_SIZE_2;
 
 
 		float theta = (rand() % 4) * (PI / 2.0); // Robot starts at one of the 4 directions 
 
 		playerPosition->theta = theta;
+}
+
+struct GridVector2 {
+	int x;
+	int y;
+};
+
+#define NUM_NEIGHBOR_CHECK 8
+// 8 Connected neighbors corners
+const struct GridVector2 neighbors[NUM_NEIGHBOR_CHECK] = {
+	{1, 1},
+	{1, -1},
+	{-1, -1},
+	{-1, 1},
+	{0, 1},
+	{1, 0},
+	{-1, 0},
+	{0, -1}
+};
+
+const bool InsideGrid(const struct GridVector2* gridCoordinate){
+	return gridCoordinate->x >= 0 && gridCoordinate->x < GRID_WIDTH && gridCoordinate->y >= 0 && gridCoordinate->y < GRID_HEIGHT;
+}
+
+const bool OccupiesGrid(const struct GridVector2* gridCoordinate, const int occupancyGrid[][GRID_HEIGHT]){
+	return InsideGrid(gridCoordinate) && occupancyGrid[gridCoordinate->x][gridCoordinate->y] != -1;
+}
+
+const bool GetObstacle(const struct GridVector2* gridCoordinate, const int occupancyGrid[][GRID_HEIGHT], const Vector2 gridCoordinates[][4], Vector2* coordinates){
+	if(InsideGrid(gridCoordinate)){
+		int coordinate = occupancyGrid[gridCoordinate->x][gridCoordinate->y];
+
+		if(coordinate != -1){
+			for(int i = 0; i < 4; ++i){
+				coordinates[i] = gridCoordinates[coordinate][i];
+			}
+			
+			return true;
+		}
+	}
+
+
+	return false;
+}
+
+const struct GridVector2 SnapToGridVec(const Vector2* pose){
+	struct GridVector2 gridPose = {pose->x / REAL_GRID_SIZE, pose->y / REAL_GRID_SIZE};
+	return gridPose;
+}
+
+const struct GridVector2 SnapToGridPose(const struct Pose* pose){
+	struct GridVector2 gridPose = {(int) (pose->x / REAL_GRID_SIZE), (int)(pose->y / REAL_GRID_SIZE)};
+	return gridPose;
+}
+
+struct GridVector2 GridVector2Add(const struct GridVector2 v1,const struct GridVector2 v2)
+{
+    struct GridVector2 result = { v1.x + v2.x, v1.y + v2.y };
+
+    return result;
+}
+
+Vector2 Vector2MultiplyScalar(const Vector2 v1,const float v2)
+{
+    Vector2 result = { v1.x*v2, v1.y*v2 };
+
+    return result;
+}
+
+#define CLOSEST_SQUARE_THRESHOLD sqrtf(2) * REAL_GRID_SIZE_2
+
+bool EntersSquare(const Vector2 startPos1,const Vector2 endPos1,const Vector2 squareCenter){
+	const Vector2 ab = Vector2Subtract(endPos1, startPos1);
+	const Vector2 ac = Vector2Subtract(squareCenter, startPos1);
+
+	const float proj = Vector2DotProduct(ab, ac) / (REAL_PLAYER_SIZE * REAL_PLAYER_SIZE);
+
+	if(proj < 0 || proj > 1){
+		return false;
+	}
+
+	const Vector2 closestPoint = Vector2Add(startPos1,  Vector2MultiplyScalar(ab, proj)); 
+
+	return Vector2Distance(closestPoint, squareCenter) <= CLOSEST_SQUARE_THRESHOLD;
+}
+
+static inline void ProjectOntoAxis(const Vector2 verts[4], float ux, float uy,
+                                     float *min_out, float *max_out) {
+    // Initial projection
+    float proj = verts[0].x * ux + verts[0].y * uy;
+    float min_p = proj;
+    float max_p = proj;
+    
+    // Check remaining vertices
+    for (int i = 1; i < 4; ++i) {
+        proj = verts[i].x * ux + verts[i].y * uy;
+        if (proj < min_p) min_p = proj;
+        if (proj > max_p) max_p = proj;
+    }
+    *min_out = min_p;
+    *max_out = max_p;
+}
+
+
+bool CheckPlayerCollision(const struct Pose* playerPosition, const Vector2* playerVertices, const int occupancyGrid[][GRID_HEIGHT], const Vector2 obstacleVertices[][4]) {
+	struct GridVector2 playGrid = SnapToGridPose(playerPosition);
+
+	// printf("[%f, %f]->[%d, %d]\n", playerPosition->x, playerPosition->y, playGrid.x, playGrid.y);
+
+	if(OccupiesGrid(&playGrid, occupancyGrid)){
+		return true;
+	}
+
+	 // Look at the 8 connected neighbors of choices instead of the whole grid ( simple speed up);
+	for(int i = 0; i < 4; ++i){
+		const struct GridVector2 vertexGrid = SnapToGridVec(&playerVertices[i]);
+		if(OccupiesGrid(&vertexGrid, occupancyGrid)){
+			return true;
+		}
+	}
+
+	// Now only need to check if the the lines collide with the corder grids ( Only need to check) the corner edges ( it is assumed that the robot is less than or equal than the world obstacles sizes)
+
+	Vector2 collisionPoint = {0};
+	Vector2 obstacleCoordinates[4] = {0};
+
+	const float c = cosf(playerPosition->theta);
+    const float s = sinf(playerPosition->theta);
+	const float axes[4][2] = {
+        { 1.0f,  0.0f },
+        { 0.0f,  1.0f },
+        { -s,     c    },
+        {  c,     s    }
+    };
+
+	// Separating Axis Theorem (SAT) for two convex polygons
+	float playerMin[4], playerMax[4];
+    for (int i = 0; i < 4; ++i) {
+        float ux = axes[i][0], uy = axes[i][1];
+        ProjectOntoAxis(playerVertices, ux, uy, &playerMin[i], &playerMax[i]);
+    }
+
+	for(int j = 0; j < NUM_NEIGHBOR_CHECK; ++j){
+		const struct GridVector2 position = GridVector2Add(playGrid, neighbors[j]);
+
+		// Check an obstacle even exists in that corner
+		if(GetObstacle(&position, occupancyGrid, obstacleVertices, obstacleCoordinates)){
+			bool separated = false;
+
+			for (int i = 0; i < 4; ++i) {
+				float ux = axes[i][0];
+				float uy = axes[i][1];
+				float minB, maxB;
+                ProjectOntoAxis(obstacleCoordinates, ux, uy, &minB, &maxB);
+
+				// If projections do not overlap, separating axis found
+                if (playerMax[i] < minB || maxB < playerMin[i]) {
+                    separated = true;
+                    break;
+                }
+			}
+
+			if (!separated) {
+                return true;
+            }
+		}
+	}
+
+	return false;
 }
 
 
@@ -246,15 +486,23 @@ int main ()
 
 	const Rectangle worldMap = {0, 0, GRID_SIZE * GRID_WIDTH, GRID_SIZE * GRID_HEIGHT};
 
-	bool occupancyGrid[GRID_WIDTH][GRID_HEIGHT] = {false};
+	int occupancyGrid[GRID_WIDTH][GRID_HEIGHT];
+
+	for(int i = 0; i < GRID_WIDTH; ++i){
+		for(int j = 0; j < GRID_HEIGHT; ++j){
+			occupancyGrid[i][j] = -1;
+		}
+	}
 
 	#if NUM_OBSTACLES > 0
 	int obstacleLocations [NUM_OBSTACLES][2] = {0}; // Grid x, y locations of each of the obstacles
 	Rectangle obstacleCollisions [NUM_OBSTACLES];
+	Vector2 obstacleVerticles[NUM_OBSTACLES][4] = {0};
 
-	srand(time(NULL));   // Initialization of random seed, should only be called once.
+	// srand(time(NULL));   // Initialization of random seed, should only be called once.
+	srand(0);
 
-	GenerateObstacles(occupancyGrid, obstacleLocations, obstacleCollisions);
+	GenerateObstacles(occupancyGrid, obstacleLocations, obstacleCollisions, obstacleVerticles);
 	#endif 
 
 	#ifdef HAS_LIDAR
@@ -262,7 +510,8 @@ int main ()
 	#endif
 
 	struct Pose robotPosition = {(GRID_SIZE) / 2.0f, (GRID_SIZE)  / 2.0f, 0};
-	Vector2 robotVelocity = {0.0, 0.0};
+	struct Vector2 robotVertices[4] = {0};
+	Vector2 robotVelocity = {0.1, 0.1};
 
 	RandomPlayerStart(&robotPosition, occupancyGrid);
 
@@ -288,6 +537,10 @@ int main ()
 	// SearchAndSetResourceDir("resources");
 
 	SetTargetFPS(60);
+
+	bool hasCollided = false;
+
+	float dt = 0.1;
 	
 	// game loop
 	while (!WindowShouldClose())		// run the loop untill the user presses ESCAPE or presses the Close button on the window
@@ -300,7 +553,9 @@ int main ()
 		//----------------------------------------------------------------------------------
 		CameraLogic(&camera, &zoomMode);
 
-		UpdatePlayerState(&robotPosition, &robotVelocity);
+		UpdatePlayerState(&robotPosition, &robotVelocity, robotVertices, dt);
+
+		hasCollided = CheckPlayerCollision(&robotPosition, robotVertices, occupancyGrid, obstacleVerticles);
 
 		#ifdef HAS_LIDAR
 		UpdateLidarScan(&robotPosition, lidarScan, obstacleCollisions, &worldMap);
@@ -326,7 +581,7 @@ int main ()
 				#endif	
 
 				// Draw player
-				DrawPlayer(&robotPosition, &robotVelocity);
+				DrawPlayer(&robotPosition, &robotVelocity, robotVertices, hasCollided);
 
 				// Draw the grid world
 				DrawWorldGrid(screenWidth, screenHeight);
@@ -340,6 +595,8 @@ int main ()
 				// Need to plot seperately otherwise the text will be plotted inverted
                 DrawWorldGridText();
             EndMode2D();
+
+			GuiSliderBar((Rectangle){ 600, 40, 120, 20 }, "dt", TextFormat("%.2f", dt), &dt, -0.2, 0.2);
             
             // Draw mouse reference
             //Vector2 mousePos = GetWorldToScreen2D(GetMousePosition(), camera);
