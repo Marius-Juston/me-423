@@ -351,12 +351,12 @@ const bool GetObstacle(const GridVector2* gridCoordinate, const int occupancyGri
 }
 
 const GridVector2 SnapToGridVec(const Vector2* pose){
-	GridVector2 gridPose = {pose->x / REAL_GRID_SIZE, pose->y / REAL_GRID_SIZE};
+	GridVector2 gridPose = {(int) floorf(pose->x / REAL_GRID_SIZE), (int) floorf(pose->y / REAL_GRID_SIZE)};
 	return gridPose;
 }
 
 const GridVector2 SnapToGridPose(const Pose* pose){
-	GridVector2 gridPose = {(int) (pose->x / REAL_GRID_SIZE), (int)(pose->y / REAL_GRID_SIZE)};
+	GridVector2 gridPose = {(int) floorf(pose->x / REAL_GRID_SIZE), (int)floorf(pose->y / REAL_GRID_SIZE)};
 	return gridPose;
 }
 
@@ -596,6 +596,8 @@ int main ()
             EndMode2D();
 
 			GuiSliderBar((Rectangle){ 600, 40, 120, 20 }, "dt", TextFormat("%.2f", dt), &dt, -0.2, 0.2);
+			GuiSliderBar((Rectangle){ 600, 80, 120, 20 }, "v", TextFormat("%.2f", robotVelocity.x), &robotVelocity.x, -0.2, 0.2);
+			GuiSliderBar((Rectangle){ 600, 120, 120, 20 }, "w", TextFormat("%.2f", robotVelocity.y), &robotVelocity.y, -0.2, 0.2);
             
             // Draw mouse reference
             //Vector2 mousePos = GetWorldToScreen2D(GetMousePosition(), camera);
