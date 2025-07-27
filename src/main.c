@@ -153,14 +153,18 @@ void DrawWorldGrid(){
 	{
 		DrawLineV((Vector2){0, (float)(GRID_SIZE*i )}, (Vector2){ (float)(GRID_SIZE * (GRID_WIDTH )  ), (float)(GRID_SIZE *i)}, LIGHTGRAY);
 	}
+}
 
+void DrawWorldGridText(){
+	// Since we are flipping the world y axis we want to ensure that we do not flip the text itself
 
 	for (int r = 0; r < GRID_HEIGHT; r++)
 	{
 		for (int c = 0; c < GRID_WIDTH; ++c)
 		{
 			// TODO figure out how to have font size be dynamically set based on the GRID_SIZE variable to ensure that it all fits inside it
-			DrawText(TextFormat("[%i,%i]", c, r), GRID_SIZE*c + 2,(GRID_HEIGHT-1)* GRID_SIZE -  GRID_SIZE*r + 2, TEXT_FONT_SIZE, LIGHTGRAY);
+			// DrawText(TextFormat("[%i,%i]", c, r), GRID_SIZE*c + 2,(GRID_HEIGHT-1)* GRID_SIZE -  GRID_SIZE*r + 2, TEXT_FONT_SIZE, LIGHTGRAY);
+			DrawText(TextFormat("[%i,%i]", c, r), GRID_SIZE*c + 2,(GRID_HEIGHT)* GRID_SIZE -  GRID_SIZE*r + 2 - SCREEN_SIZE, TEXT_FONT_SIZE, LIGHTGRAY);
 		}
 	}
 }
@@ -181,9 +185,9 @@ void UpdatePlayerState(struct Pose* playerState, const Vector2* command){
 	// Differential Drive motion model
 	playerState->x += (command->x * cosf(playerState->theta) * DT * PIXEL_SCALE);
 	playerState->y += (command->x * sinf(playerState->theta)* DT * PIXEL_SCALE);
-	playerState->theta += -(command->y * DT); // Heading negated to properlly define the right hand rule
+	playerState->theta += (command->y * DT); // Heading negated to properlly define the right hand rule
 
-	printf("Player: (x: %f y: %f theta: %f) \n", playerState->x, playerState->y, playerState->theta * RAD2DEG);
+	// printf("Player: (x: %f y: %f theta: %f) \n", playerState->x, playerState->y, playerState->theta * RAD2DEG);
 }
 
 #define PLAYER_SIZE (float) (GRID_SIZE) - (float)(GRID_SIZE) * 3.0/4.0 / 2
@@ -233,7 +237,7 @@ int main ()
 
 	// Center camera to middle of the screen
 	camera.target.x =  (GRID_WIDTH * GRID_SIZE -SCREEN_SIZE) / 2.0f;
-	camera.target.y =  (GRID_HEIGHT * GRID_SIZE -SCREEN_SIZE) / 2.0f;
+	camera.target.y =  -(GRID_HEIGHT * GRID_SIZE + SCREEN_SIZE) / 2.0f;
 
     camera.zoom = 1.0f; // To add some padding zoom out initially
 
@@ -268,6 +272,12 @@ int main ()
             ClearBackground(RAYWHITE);
 
             BeginMode2D(camera);
+                rlPushMatrix();
+				// Since inverting y axis we need to change the culling as well otherwise things don't get rendered
+				rlSetCullFace(RL_CULL_FACE_FRONT);
+				// Make it proper cartesian coordinate system plotting
+                rlScalef(1.0, -1.0, 1.0);
+
 				#if NUM_OBSTACLES > 0
 					// If the map has obstacles then draw them
 					DrawObstacles(obstacleCollisions);
@@ -278,6 +288,15 @@ int main ()
 
 				// Draw the grid world
 				DrawWorldGrid(screenWidth, screenHeight);
+
+				rlPopMatrix();
+            EndMode2D();
+
+			rlSetCullFace(RL_CULL_FACE_BACK);
+
+			BeginMode2D(camera);
+				// Need to plot seperately otherwise the text will be plotted inverted
+                DrawWorldGridText();
             EndMode2D();
             
             // Draw mouse reference
