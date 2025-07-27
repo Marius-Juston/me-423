@@ -31,7 +31,7 @@ struct Pose {
 	float theta;
 };
 
-#define NUM_OBSTACLES 10
+#define NUM_OBSTACLES 20
 
 #define GRID_WIDTH 10
 #define GRID_HEIGHT 20
@@ -54,13 +54,19 @@ struct Pose {
 #endif
 
 
-void GenerateObstacles(int* obtacleLocations, Rectangle * obstacleCollisions) {
+void GenerateObstacles(bool occupancyGrid[][GRID_HEIGHT], int obtacleLocations[][2], Rectangle * obstacleCollisions) {
 	for(int i= 0; i < NUM_OBSTACLES; ++i){
-		int rx = rand() % GRID_WIDTH; 
-		int ry = rand() % GRID_HEIGHT; 
+		int rx, ry;
 
-		obtacleLocations[i * 2] = rx;      // Returns a pseudo-random integer between 0 and gridWidth.
-		obtacleLocations[i * 2 + 1] = ry; // Returns a pseudo-random integer between 0 and gridHeight.
+		do{
+			rx = rand() % GRID_WIDTH; 
+			ry = rand() % GRID_HEIGHT; 
+		}while(occupancyGrid[rx][ry]);
+
+		occupancyGrid[rx][ry] = true;
+
+		obtacleLocations[i][0] = rx;      // Returns a pseudo-random integer between 0 and gridWidth.
+		obtacleLocations[i][1] = ry; // Returns a pseudo-random integer between 0 and gridHeight.
 
 		obstacleCollisions[i].x = (float) rx * GRID_SIZE;
 		obstacleCollisions[i].y = (float) ry * GRID_SIZE;
@@ -177,24 +183,27 @@ void DrawObstacles(const Rectangle* obstacles){
 
 #define DT 0.1
 
-#define PIXEL_SCALE  GRID_SIZE / 1.0f // Represents the gridsize to pixel scaling for the motion controlling in cm
+#define REAL_GRID_SIZE 0.3 // Represents the true size of a grid cell in meters
+
+#define PIXEL_SCALE  GRID_SIZE / REAL_GRID_SIZE // Represents the gridsize to pixel scaling for the motion controlling in meters
 
 void UpdatePlayerState(struct Pose* playerState, const Vector2* command){
 
 
 	// Differential Drive motion model
-	playerState->x += (command->x * cosf(playerState->theta) * DT * PIXEL_SCALE);
-	playerState->y += (command->x * sinf(playerState->theta)* DT * PIXEL_SCALE);
+	playerState->x += (command->x * cosf(playerState->theta) * DT);
+	playerState->y += (command->x * sinf(playerState->theta)* DT);
 	playerState->theta += (command->y * DT); // Heading negated to properlly define the right hand rule
 
 	// printf("Player: (x: %f y: %f theta: %f) \n", playerState->x, playerState->y, playerState->theta * RAD2DEG);
 }
 
-#define PLAYER_SIZE (float) (GRID_SIZE) - (float)(GRID_SIZE) * 3.0/4.0 / 2
+#define REAL_PLAYER_SIZE 0.2 // Dimension of the robot in meters
+#define PLAYER_SIZE REAL_PLAYER_SIZE * PIXEL_SCALE // Size of the robot in pixel size
 
 void DrawPlayer(const struct Pose* robotPosition, const Vector2* robotVelocity){
 
-	Rectangle robot = {robotPosition->x, robotPosition->y, PLAYER_SIZE, PLAYER_SIZE};
+	Rectangle robot = {robotPosition->x * PIXEL_SCALE, robotPosition->y * PIXEL_SCALE, PLAYER_SIZE, PLAYER_SIZE};
 	Vector2 origin = {robot.width/2.0f, robot.height / 2.0f};
 
 	DrawRectanglePro(
@@ -203,6 +212,29 @@ void DrawPlayer(const struct Pose* robotPosition, const Vector2* robotVelocity){
 		robotPosition->theta * RAD2DEG,
 		BLACK
 	);
+
+	Vector2 start = {robot.x, robot.y};
+	Vector2 end = {robot.x +  PLAYER_SIZE /2.0f * cosf(robotPosition->theta), 
+		           robot.y +  PLAYER_SIZE /2.0f * sinf(robotPosition->theta)};
+	
+	DrawLineEx(start, end, 2, GREEN);
+}
+
+void RandomPlayerStart(struct Pose* playerPosition, bool occupancyGrid[][GRID_HEIGHT]){
+		int rx, ry;
+
+		do{
+			rx = rand() % GRID_WIDTH; 
+			ry = rand() % GRID_HEIGHT; 
+		}while(occupancyGrid[rx][ry]);
+
+		playerPosition->x = rx * REAL_GRID_SIZE + REAL_GRID_SIZE /2.0f;
+		playerPosition->y = ry * REAL_GRID_SIZE + REAL_GRID_SIZE /2.0f;
+
+
+		float theta = (rand() % 4) * (PI / 2.0); // Robot starts at one of the 4 directions 
+
+		playerPosition->theta = theta;
 }
 
 
@@ -214,13 +246,15 @@ int main ()
 
 	const Rectangle worldMap = {0, 0, GRID_SIZE * GRID_WIDTH, GRID_SIZE * GRID_HEIGHT};
 
+	bool occupancyGrid[GRID_WIDTH][GRID_HEIGHT] = {false};
+
 	#if NUM_OBSTACLES > 0
-	int obstacleLocations [NUM_OBSTACLES * 2] = {0}; // Grid x, y locations of each of the obstacles
+	int obstacleLocations [NUM_OBSTACLES][2] = {0}; // Grid x, y locations of each of the obstacles
 	Rectangle obstacleCollisions [NUM_OBSTACLES];
 
 	srand(time(NULL));   // Initialization of random seed, should only be called once.
 
-	GenerateObstacles(obstacleLocations, obstacleCollisions);
+	GenerateObstacles(occupancyGrid, obstacleLocations, obstacleCollisions);
 	#endif 
 
 	#ifdef HAS_LIDAR
@@ -228,7 +262,11 @@ int main ()
 	#endif
 
 	struct Pose robotPosition = {(GRID_SIZE) / 2.0f, (GRID_SIZE)  / 2.0f, 0};
-	Vector2 robotVelocity = {0.1, 0.1};
+	Vector2 robotVelocity = {0.0, 0.0};
+
+	RandomPlayerStart(&robotPosition, occupancyGrid);
+
+	printf("Player Starting location (%f, %f, %f)", robotPosition.x, robotPosition.y, robotPosition.theta * RAD2DEG);
 
 	// Tell the window to use vsync and work on high DPI displays
 	SetConfigFlags(FLAG_VSYNC_HINT | FLAG_WINDOW_HIGHDPI | FLAG_MSAA_4X_HINT | FLAG_WINDOW_TRANSPARENT);
@@ -254,6 +292,10 @@ int main ()
 	// game loop
 	while (!WindowShouldClose())		// run the loop untill the user presses ESCAPE or presses the Close button on the window
 	{
+		if (IsKeyPressed(KEY_R)){
+			RandomPlayerStart(&robotPosition, occupancyGrid);
+		}
+
 		// Update
 		//----------------------------------------------------------------------------------
 		CameraLogic(&camera, &zoomMode);
@@ -300,9 +342,11 @@ int main ()
             EndMode2D();
             
             // Draw mouse reference
-            //Vector2 mousePos = GetWorldToScreen2D(GetMousePosition(), camera)
+            //Vector2 mousePos = GetWorldToScreen2D(GetMousePosition(), camera);
             DrawCircleV(GetMousePosition(), 4, DARKGRAY);
-            DrawTextEx(GetFontDefault(), TextFormat("[%i, %i]", GetMouseX(), GetMouseY()), 
+
+			//TODO Make the coordinate be based on real coordinate position on camera position
+            DrawTextEx(GetFontDefault(), TextFormat("[%i, %i]", GetMouseX(), GetMouseY()),  
                 Vector2Add(GetMousePosition(), (Vector2){ -44, -24 }), 20, 2, BLACK);
 
             DrawText("[1][2] Select mouse zoom mode (Wheel or Move)", 20, 20, 20, DARKGRAY);
