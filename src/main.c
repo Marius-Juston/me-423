@@ -22,12 +22,9 @@ by Jeffery Myers is marked with CC0 1.0. To view a copy of this license, visit h
 #include "resource_dir.h"	// utility header for SearchAndSetResourceDir
 #include <math.h>
 
-#define max(a,b)             \
-({                           \
-    __typeof__ (a) _a = (a); \
-    __typeof__ (b) _b = (b); \
-    _a > _b ? _a : _b;       \
-})
+static inline float maxd(const int a, const int b) {
+    return (a > b ? a : b);
+}
 
 typedef struct Pose {
 	float x;
@@ -49,12 +46,14 @@ typedef struct Pose {
 
 #ifndef GRID_SIZE
 // Will find the grid size necessary to have everything plotted within the specific screen size, with padding
-#define GRID_SIZE (SCREEN_SIZE - 2 * SPACING) / max(GRID_HEIGHT, GRID_WIDTH)
+#define GRID_SIZE (SCREEN_SIZE - 2 * SPACING) / maxd(GRID_HEIGHT, GRID_WIDTH)
+
 #endif
 
 #ifdef HAS_LIDAR
 #define NUM_LIDAR_SCANS 10 // Numer of datapoints inside the LiDAR scan
 #define LIDAR_ANGULAR_RESOLUTION 2 * PI / NUM_LIDAR_SCANS // Angular resolution of LiDAR in radians 
+
 #endif
 
 #define REAL_GRID_SIZE 0.3 // Represents the true size of a grid cell in meters
