@@ -31,7 +31,7 @@ struct Pose {
 	float theta;
 };
 
-#define NUM_OBSTACLES 1
+#define NUM_OBSTACLES 10
 
 #define GRID_WIDTH 10
 #define GRID_HEIGHT 20
@@ -55,7 +55,7 @@ void GenerateObstacles(int* obtacleLocations) {
 		obtacleLocations[i * 2] = rx;      // Returns a pseudo-random integer between 0 and gridWidth.
 		obtacleLocations[i * 2 + 1] = ry; // Returns a pseudo-random integer between 0 and gridHeight.
 
-		printf("Obstacle %d: (%d, %d)", i, rx, ry);		
+		printf("Obstacle %d: (%d, %d)\n", i, rx, ry);		
 	}
 }
 
@@ -143,8 +143,17 @@ void DrawWorldGrid(){
 		for (int c = 0; c < GRID_WIDTH; ++c)
 		{
 			// TODO figure out how to have font size be dynamically set based on the GRID_SIZE variable to ensure that it all fits inside it
-			DrawText(TextFormat("[%i,%i]", r, c), GRID_SIZE*c + 12,  GRID_SIZE*r + 12, TEXT_FONT_SIZE, LIGHTGRAY);
+			DrawText(TextFormat("[%i,%i]", c, r), GRID_SIZE*c + 12,  GRID_SIZE*r + 12, TEXT_FONT_SIZE, LIGHTGRAY);
 		}
+	}
+}
+
+void DrawObstacles(const int* obstacles){
+	for(int i = 0; i < NUM_OBSTACLES; ++i){
+		int x = obstacles[i  * 2] * GRID_SIZE + SPACING;
+		int y = obstacles[i  * 2 + 1] * GRID_SIZE + SPACING;
+
+		DrawRectangle(x, y, GRID_SIZE, GRID_SIZE, RED);
 	}
 }
 
@@ -195,6 +204,10 @@ int main ()
             ClearBackground(RAYWHITE);
 
             BeginMode2D(camera);
+
+				#if NUM_OBSTACLES > 0
+					DrawObstacles(obstacleLocations);
+				#endif	
 
                 // Draw the 3d grid, rotated 90 degrees and centered around 0,0 
                 // just so we have something in the XY plane
