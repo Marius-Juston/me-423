@@ -29,11 +29,11 @@ by Jeffery Myers is marked with CC0 1.0. To view a copy of this license, visit h
     _a > _b ? _a : _b;       \
 })
 
-struct Pose {
+typedef struct Pose {
 	float x;
 	float y;
 	float theta;
-};
+} Pose;
 
 #define NUM_OBSTACLES 20
 
@@ -160,7 +160,7 @@ void CameraLogic(Camera2D* camera, int* zoomMode){
         }
 }
 
-void UpdateLidarScan(const struct Pose *robotPosition, float* lidarScan, const Rectangle* obstacleCollisions, const Rectangle* worldBorder){
+void UpdateLidarScan(const Pose *robotPosition, float* lidarScan, const Rectangle* obstacleCollisions, const Rectangle* worldBorder){
 	//TODO Have Ray Casting Performed such that it gets the closest hit point to an obstacle and populates the lidarScan array
 
 }
@@ -202,7 +202,7 @@ void DrawObstacles(const Rectangle* obstacles){
 	}
 }
 
-void UpdatePlayerVertices(const struct Pose* pose,  Vector2* vertices){
+void UpdatePlayerVertices(const Pose* pose,  Vector2* vertices){
 	Vector2 topLeft = { 0 };
     Vector2 topRight = { 0 };
     Vector2 bottomLeft = { 0 };
@@ -248,7 +248,7 @@ void UpdatePlayerVertices(const struct Pose* pose,  Vector2* vertices){
 	vertices[3] = bottomLeft;
 }
 
-void UpdatePlayerState(struct Pose* playerState, const Vector2* command, Vector2* vertices, const float dt){
+void UpdatePlayerState(Pose* playerState, const Vector2* command, Vector2* vertices, const float dt){
 
 
 	// Differential Drive motion model
@@ -261,7 +261,7 @@ void UpdatePlayerState(struct Pose* playerState, const Vector2* command, Vector2
 	// printf("Player: (x: %f y: %f theta: %f) \n", playerState->x, playerState->y, playerState->theta * RAD2DEG);
 }
 
-void DrawPlayer(const struct Pose* robotPosition, const Vector2* robotVelocity, const Vector2* vertices, bool hasCollided){
+void DrawPlayer(const Pose* robotPosition, const Vector2* robotVelocity, const Vector2* vertices, bool hasCollided){
 
 	Rectangle robot = {robotPosition->x * PIXEL_SCALE, robotPosition->y * PIXEL_SCALE, PLAYER_SIZE, PLAYER_SIZE};
 	Vector2 origin = {robot.width/2.0f, robot.height / 2.0f};
@@ -291,7 +291,7 @@ void DrawPlayer(const struct Pose* robotPosition, const Vector2* robotVelocity, 
 	}
 }
 
-void RandomPlayerStart(struct Pose* playerPosition, int occupancyGrid[][GRID_HEIGHT]){
+void RandomPlayerStart(Pose* playerPosition, int occupancyGrid[][GRID_HEIGHT]){
 		int rx, ry;
 
 		do{
@@ -308,14 +308,14 @@ void RandomPlayerStart(struct Pose* playerPosition, int occupancyGrid[][GRID_HEI
 		playerPosition->theta = theta;
 }
 
-struct GridVector2 {
+typedef struct GridVector2 {
 	int x;
 	int y;
-};
+} GridVector2;
 
 #define NUM_NEIGHBOR_CHECK 8
 // 8 Connected neighbors corners
-const struct GridVector2 neighbors[NUM_NEIGHBOR_CHECK] = {
+const GridVector2 neighbors[NUM_NEIGHBOR_CHECK] = {
 	{1, 1},
 	{1, -1},
 	{-1, -1},
@@ -326,15 +326,15 @@ const struct GridVector2 neighbors[NUM_NEIGHBOR_CHECK] = {
 	{0, -1}
 };
 
-const bool InsideGrid(const struct GridVector2* gridCoordinate){
+const bool InsideGrid(const GridVector2* gridCoordinate){
 	return gridCoordinate->x >= 0 && gridCoordinate->x < GRID_WIDTH && gridCoordinate->y >= 0 && gridCoordinate->y < GRID_HEIGHT;
 }
 
-const bool OccupiesGrid(const struct GridVector2* gridCoordinate, const int occupancyGrid[][GRID_HEIGHT]){
+const bool OccupiesGrid(const GridVector2* gridCoordinate, const int occupancyGrid[][GRID_HEIGHT]){
 	return InsideGrid(gridCoordinate) && occupancyGrid[gridCoordinate->x][gridCoordinate->y] != -1;
 }
 
-const bool GetObstacle(const struct GridVector2* gridCoordinate, const int occupancyGrid[][GRID_HEIGHT], const Vector2 gridCoordinates[][4], Vector2* coordinates){
+const bool GetObstacle(const GridVector2* gridCoordinate, const int occupancyGrid[][GRID_HEIGHT], const Vector2 gridCoordinates[][4], Vector2* coordinates){
 	if(InsideGrid(gridCoordinate)){
 		int coordinate = occupancyGrid[gridCoordinate->x][gridCoordinate->y];
 
@@ -351,19 +351,19 @@ const bool GetObstacle(const struct GridVector2* gridCoordinate, const int occup
 	return false;
 }
 
-const struct GridVector2 SnapToGridVec(const Vector2* pose){
-	struct GridVector2 gridPose = {pose->x / REAL_GRID_SIZE, pose->y / REAL_GRID_SIZE};
+const GridVector2 SnapToGridVec(const Vector2* pose){
+	GridVector2 gridPose = {pose->x / REAL_GRID_SIZE, pose->y / REAL_GRID_SIZE};
 	return gridPose;
 }
 
-const struct GridVector2 SnapToGridPose(const struct Pose* pose){
-	struct GridVector2 gridPose = {(int) (pose->x / REAL_GRID_SIZE), (int)(pose->y / REAL_GRID_SIZE)};
+const GridVector2 SnapToGridPose(const Pose* pose){
+	GridVector2 gridPose = {(int) (pose->x / REAL_GRID_SIZE), (int)(pose->y / REAL_GRID_SIZE)};
 	return gridPose;
 }
 
-struct GridVector2 GridVector2Add(const struct GridVector2 v1,const struct GridVector2 v2)
+GridVector2 GridVector2Add(const GridVector2 v1,const GridVector2 v2)
 {
-    struct GridVector2 result = { v1.x + v2.x, v1.y + v2.y };
+    GridVector2 result = { v1.x + v2.x, v1.y + v2.y };
 
     return result;
 }
@@ -410,8 +410,8 @@ static inline void ProjectOntoAxis(const Vector2 verts[4], float ux, float uy,
 }
 
 
-bool CheckPlayerCollision(const struct Pose* playerPosition, const Vector2* playerVertices, const int occupancyGrid[][GRID_HEIGHT], const Vector2 obstacleVertices[][4]) {
-	struct GridVector2 playGrid = SnapToGridPose(playerPosition);
+bool CheckPlayerCollision(const Pose* playerPosition, const Vector2* playerVertices, const int occupancyGrid[][GRID_HEIGHT], const Vector2 obstacleVertices[][4]) {
+	GridVector2 playGrid = SnapToGridPose(playerPosition);
 
 	// printf("[%f, %f]->[%d, %d]\n", playerPosition->x, playerPosition->y, playGrid.x, playGrid.y);
 
@@ -421,7 +421,7 @@ bool CheckPlayerCollision(const struct Pose* playerPosition, const Vector2* play
 
 	 // Look at the 8 connected neighbors of choices instead of the whole grid ( simple speed up);
 	for(int i = 0; i < 4; ++i){
-		const struct GridVector2 vertexGrid = SnapToGridVec(&playerVertices[i]);
+		const GridVector2 vertexGrid = SnapToGridVec(&playerVertices[i]);
 		if(OccupiesGrid(&vertexGrid, occupancyGrid)){
 			return true;
 		}
@@ -449,7 +449,7 @@ bool CheckPlayerCollision(const struct Pose* playerPosition, const Vector2* play
     }
 
 	for(int j = 0; j < NUM_NEIGHBOR_CHECK; ++j){
-		const struct GridVector2 position = GridVector2Add(playGrid, neighbors[j]);
+		const GridVector2 position = GridVector2Add(playGrid, neighbors[j]);
 
 		// Check an obstacle even exists in that corner
 		if(GetObstacle(&position, occupancyGrid, obstacleVertices, obstacleCoordinates)){
@@ -509,8 +509,8 @@ int main ()
 	float lidarScan[NUM_LIDAR_SCANS] = {0.0};
 	#endif
 
-	struct Pose robotPosition = {(GRID_SIZE) / 2.0f, (GRID_SIZE)  / 2.0f, 0};
-	struct Vector2 robotVertices[4] = {0};
+	Pose robotPosition = {(GRID_SIZE) / 2.0f, (GRID_SIZE)  / 2.0f, 0};
+	Vector2 robotVertices[4] = {0};
 	Vector2 robotVelocity = {0.1, 0.1};
 
 	RandomPlayerStart(&robotPosition, occupancyGrid);
