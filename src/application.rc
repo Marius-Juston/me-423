@@ -9,13 +9,13 @@ BEGIN
     //BLOCK "080904E4"  // English UK
     BLOCK "040904E4"    // English US
     BEGIN
-      //VALUE "CompanyName", "raylib technologies"
-      VALUE "FileDescription", "A cool game made with raylib (www.raylib.com)"
+      //VALUE "CompanyName", "University of Illinois Urbana Champaign"
+      VALUE "FileDescription", "A Simple C Simulation for differential drive robots for the ME 423 UIUC Course to help students test algorithms"
       VALUE "FileVersion", "1.0.0"
-      VALUE "InternalName", "cool game"
-      VALUE "LegalCopyright", "(c) 2025 YOUR NAME"
+      VALUE "InternalName", "DiffSim"
+      VALUE "LegalCopyright", "(c) 2025 Marius Juston"
       //VALUE "OriginalFilename", "raylib_app"
-      VALUE "ProductName", "A cool game"
+      VALUE "ProductName", "DiffSim"
       VALUE "ProductVersion", "1.0.0"
     END
   END
