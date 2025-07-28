@@ -22,6 +22,7 @@
 		"xloctime": "c",
 		"xmemory": "c",
 		"xstring": "c",
-		"xutility": "c"
+		"xutility": "c",
+		"resource_dir.h": "c"
 	}
 }

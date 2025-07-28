@@ -22,9 +22,10 @@ by Jeffery Myers is marked with CC0 1.0. To view a copy of this license, visit h
 #include "resource_dir.h"	// utility header for SearchAndSetResourceDir
 #include <math.h>
 
-static inline float maxd(const int a, const int b) {
-    return (a > b ? a : b);
-}
+// static inline float maxd(const int a, const int b) {
+//     return (a > b ? a : b);
+// }
+#define max(a, b) ((a) > (b) ? (a) : (b))
 
 typedef struct Pose {
 	float x;
@@ -46,13 +47,13 @@ typedef struct Pose {
 
 #ifndef GRID_SIZE
 // Will find the grid size necessary to have everything plotted within the specific screen size, with padding
-#define GRID_SIZE (SCREEN_SIZE - 2 * SPACING) / maxd(GRID_HEIGHT, GRID_WIDTH)
+#define GRID_SIZE (SCREEN_SIZE - 2 * SPACING) / max(GRID_HEIGHT, GRID_WIDTH)
 
 #endif
 
 #ifdef HAS_LIDAR
 #define NUM_LIDAR_SCANS 10 // Numer of datapoints inside the LiDAR scan
-#define LIDAR_ANGULAR_RESOLUTION 2 * PI / NUM_LIDAR_SCANS // Angular resolution of LiDAR in radians 
+#define LIDAR_FOV       (2*PI) // The view of the lidar in radians
 
 #endif
 
@@ -167,7 +168,7 @@ void UpdateLidarScan(const Pose *robotPosition, float* lidarScan, const Rectangl
 #define TEXT_OFFSET 1
 #define TEXT_FONT_SIZE 10
 
-inline void DrawWorldGrid(){
+void DrawWorldGrid(){
 	// Draw centered world grid
 
 	for (int i = 0; i < GRID_WIDTH + 1; ++i)
@@ -181,7 +182,7 @@ inline void DrawWorldGrid(){
 	}
 }
 
-inline void DrawWorldGridText(){
+void DrawWorldGridText(){
 	// Since we are flipping the world y axis we want to ensure that we do not flip the text itself
 
 	for (int r = 0; r < GRID_HEIGHT; r++)
@@ -195,7 +196,7 @@ inline void DrawWorldGridText(){
 	}
 }
 
-inline void DrawObstacles(const Rectangle* obstacles){
+void DrawObstacles(const Rectangle* obstacles){
 	for(int i = 0; i < NUM_OBSTACLES; ++i){
 		DrawRectangleRec(obstacles[i], RED);
 	}
@@ -247,7 +248,7 @@ void UpdatePlayerVertices(const Pose* pose,  Vector2* vertices){
 	vertices[3] = bottomLeft;
 }
 
-inline void UpdatePlayerState(Pose* playerState, const Vector2* command, Vector2* vertices, const float dt){
+void UpdatePlayerState(Pose* playerState, const Vector2* command, Vector2* vertices, const float dt){
 
 
 	// Differential Drive motion model
@@ -350,28 +351,22 @@ const bool GetObstacle(const GridVector2* gridCoordinate, const int occupancyGri
 	return false;
 }
 
-inline const GridVector2 SnapToGridVec(const Vector2* pose){
-	GridVector2 gridPose = {(int) floorf(pose->x / REAL_GRID_SIZE), (int) floorf(pose->y / REAL_GRID_SIZE)};
-	return gridPose;
+const GridVector2 SnapToGridVec(const Vector2* pose){
+	return (GridVector2) {(int) floorf(pose->x / REAL_GRID_SIZE), (int) floorf(pose->y / REAL_GRID_SIZE)};
 }
 
-inline const GridVector2 SnapToGridPose(const Pose* pose){
-	GridVector2 gridPose = {(int) floorf(pose->x / REAL_GRID_SIZE), (int)floorf(pose->y / REAL_GRID_SIZE)};
-	return gridPose;
+const GridVector2 SnapToGridPose(const Pose* pose){
+	return (GridVector2) {(int) floorf(pose->x / REAL_GRID_SIZE), (int)floorf(pose->y / REAL_GRID_SIZE)};
 }
 
-inline GridVector2 GridVector2Add(const GridVector2 v1,const GridVector2 v2)
+GridVector2 GridVector2Add(const GridVector2 v1,const GridVector2 v2)
 {
-    GridVector2 result = { v1.x + v2.x, v1.y + v2.y };
-
-    return result;
+    return (GridVector2) { v1.x + v2.x, v1.y + v2.y };
 }
 
-inline Vector2 Vector2MultiplyScalar(const Vector2 v1,const float v2)
+Vector2 Vector2MultiplyScalar(const Vector2 v1,const float v2)
 {
-    Vector2 result = { v1.x*v2, v1.y*v2 };
-
-    return result;
+    return (Vector2)  { v1.x*v2, v1.y*v2 };
 }
 
 #define CLOSEST_SQUARE_THRESHOLD sqrtf(2) * REAL_GRID_SIZE_2
