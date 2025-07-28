@@ -33,7 +33,7 @@ typedef struct Pose {
 	float theta;
 } Pose;
 
-#define NUM_OBSTACLES 20
+#define NUM_OBSTACLES 10
 
 #define GRID_WIDTH 10
 #define GRID_HEIGHT 20
@@ -160,10 +160,21 @@ void CameraLogic(Camera2D* camera, int* zoomMode){
         }
 }
 
+
+static float   lidarDistances[NUM_LIDAR_SCANS];
+static Vector2 lidarHits[NUM_LIDAR_SCANS];
+
+#if NUM_OBSTACLES > 0
 void UpdateLidarScan(const Pose *robotPosition, float* lidarScan, const Rectangle* obstacleCollisions, const Rectangle* worldBorder){
 	//TODO Have Ray Casting Performed such that it gets the closest hit point to an obstacle and populates the lidarScan array
 
 }
+#else 
+void UpdateLidarScan(const Pose *robotPosition, float* lidarScan, const Rectangle* worldBorder){
+	//TODO Have Ray Casting Performed such that it gets the closest hit point to an obstacle and populates the lidarScan array
+
+}
+#endif
 
 #define TEXT_OFFSET 1
 #define TEXT_FONT_SIZE 10
@@ -291,6 +302,7 @@ void DrawPlayer(const Pose* robotPosition, const Vector2* robotVelocity, const V
 	}
 }
 
+#if NUM_OBSTACLES > 0
 void RandomPlayerStart(Pose* playerPosition, int occupancyGrid[][GRID_HEIGHT]){
 		int rx, ry;
 
@@ -307,6 +319,19 @@ void RandomPlayerStart(Pose* playerPosition, int occupancyGrid[][GRID_HEIGHT]){
 
 		playerPosition->theta = theta;
 }
+#else
+void RandomPlayerStart(Pose* playerPosition){
+		int	rx = rand() % GRID_WIDTH; 
+		int	ry = rand() % GRID_HEIGHT; 
+		
+		playerPosition->x = rx * REAL_GRID_SIZE + REAL_GRID_SIZE_2;
+		playerPosition->y = ry * REAL_GRID_SIZE + REAL_GRID_SIZE_2;
+
+		float theta = (rand() % 4) * (PI / 2.0); // Robot starts at one of the 4 directions 
+
+		playerPosition->theta = theta;
+}
+#endif
 
 typedef struct GridVector2 {
 	int x;
@@ -477,9 +502,15 @@ int main ()
 	const int screenWidth = SCREEN_SIZE;
 	const int screenHeight = SCREEN_SIZE;
 
+	
+	Pose robotPosition = {(GRID_SIZE) / 2.0f, (GRID_SIZE)  / 2.0f, 0};
+	Vector2 robotVertices[4] = {0};
+	Vector2 robotVelocity = {0.1, 0.1};
+
 
 	const Rectangle worldMap = {0, 0, GRID_SIZE * GRID_WIDTH, GRID_SIZE * GRID_HEIGHT};
 
+	#if NUM_OBSTACLES > 0
 	int occupancyGrid[GRID_WIDTH][GRID_HEIGHT];
 
 	for(int i = 0; i < GRID_WIDTH; ++i){
@@ -488,7 +519,6 @@ int main ()
 		}
 	}
 
-	#if NUM_OBSTACLES > 0
 	int obstacleLocations [NUM_OBSTACLES][2] = {0}; // Grid x, y locations of each of the obstacles
 	Rectangle obstacleCollisions [NUM_OBSTACLES];
 	Vector2 obstacleVerticles[NUM_OBSTACLES][4] = {0};
@@ -497,17 +527,16 @@ int main ()
 	srand(0);
 
 	GenerateObstacles(occupancyGrid, obstacleLocations, obstacleCollisions, obstacleVerticles);
+
+	RandomPlayerStart(&robotPosition, occupancyGrid);
+	#else
+	RandomPlayerStart(&robotPosition);
 	#endif 
 
 	#ifdef HAS_LIDAR
 	float lidarScan[NUM_LIDAR_SCANS] = {0.0};
 	#endif
 
-	Pose robotPosition = {(GRID_SIZE) / 2.0f, (GRID_SIZE)  / 2.0f, 0};
-	Vector2 robotVertices[4] = {0};
-	Vector2 robotVelocity = {0.1, 0.1};
-
-	RandomPlayerStart(&robotPosition, occupancyGrid);
 
 	printf("Player Starting location (%f, %f, %f)", robotPosition.x, robotPosition.y, robotPosition.theta * RAD2DEG);
 
@@ -540,7 +569,11 @@ int main ()
 	while (!WindowShouldClose())		// run the loop untill the user presses ESCAPE or presses the Close button on the window
 	{
 		if (IsKeyPressed(KEY_R)){
+			#if NUM_OBSTACLES > 0
 			RandomPlayerStart(&robotPosition, occupancyGrid);
+			#else
+			RandomPlayerStart(&robotPosition);
+			#endif 
 		}
 
 		// Update
@@ -549,10 +582,16 @@ int main ()
 
 		UpdatePlayerState(&robotPosition, &robotVelocity, robotVertices, dt);
 
+		#if NUM_OBSTACLES > 0
 		hasCollided = CheckPlayerCollision(&robotPosition, robotVertices, occupancyGrid, obstacleVerticles);
+		#endif 
 
 		#ifdef HAS_LIDAR
+		#if NUM_OBSTACLES > 0
 		UpdateLidarScan(&robotPosition, lidarScan, obstacleCollisions, &worldMap);
+		#else
+		UpdateLidarScan(&robotPosition, lidarScan, &worldMap);
+		#endif
 		#endif
 
 		//----------------------------------------------------------------------------------
