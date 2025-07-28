@@ -167,7 +167,7 @@ void UpdateLidarScan(const Pose *robotPosition, float* lidarScan, const Rectangl
 #define TEXT_OFFSET 1
 #define TEXT_FONT_SIZE 10
 
-void DrawWorldGrid(){
+inline void DrawWorldGrid(){
 	// Draw centered world grid
 
 	for (int i = 0; i < GRID_WIDTH + 1; ++i)
@@ -181,7 +181,7 @@ void DrawWorldGrid(){
 	}
 }
 
-void DrawWorldGridText(){
+inline void DrawWorldGridText(){
 	// Since we are flipping the world y axis we want to ensure that we do not flip the text itself
 
 	for (int r = 0; r < GRID_HEIGHT; r++)
@@ -195,7 +195,7 @@ void DrawWorldGridText(){
 	}
 }
 
-void DrawObstacles(const Rectangle* obstacles){
+inline void DrawObstacles(const Rectangle* obstacles){
 	for(int i = 0; i < NUM_OBSTACLES; ++i){
 		DrawRectangleRec(obstacles[i], RED);
 	}
@@ -247,7 +247,7 @@ void UpdatePlayerVertices(const Pose* pose,  Vector2* vertices){
 	vertices[3] = bottomLeft;
 }
 
-void UpdatePlayerState(Pose* playerState, const Vector2* command, Vector2* vertices, const float dt){
+inline void UpdatePlayerState(Pose* playerState, const Vector2* command, Vector2* vertices, const float dt){
 
 
 	// Differential Drive motion model
@@ -350,24 +350,24 @@ const bool GetObstacle(const GridVector2* gridCoordinate, const int occupancyGri
 	return false;
 }
 
-const GridVector2 SnapToGridVec(const Vector2* pose){
+inline const GridVector2 SnapToGridVec(const Vector2* pose){
 	GridVector2 gridPose = {(int) floorf(pose->x / REAL_GRID_SIZE), (int) floorf(pose->y / REAL_GRID_SIZE)};
 	return gridPose;
 }
 
-const GridVector2 SnapToGridPose(const Pose* pose){
+inline const GridVector2 SnapToGridPose(const Pose* pose){
 	GridVector2 gridPose = {(int) floorf(pose->x / REAL_GRID_SIZE), (int)floorf(pose->y / REAL_GRID_SIZE)};
 	return gridPose;
 }
 
-GridVector2 GridVector2Add(const GridVector2 v1,const GridVector2 v2)
+inline GridVector2 GridVector2Add(const GridVector2 v1,const GridVector2 v2)
 {
     GridVector2 result = { v1.x + v2.x, v1.y + v2.y };
 
     return result;
 }
 
-Vector2 Vector2MultiplyScalar(const Vector2 v1,const float v2)
+inline Vector2 Vector2MultiplyScalar(const Vector2 v1,const float v2)
 {
     Vector2 result = { v1.x*v2, v1.y*v2 };
 
