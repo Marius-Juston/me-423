@@ -33,6 +33,13 @@ typedef struct Pose {
 	float theta;
 } Pose;
 
+
+typedef struct GridVector2 {
+	int x;
+	int y;
+} GridVector2;
+
+
 #define NUM_OBSTACLES 10
 
 #define GRID_WIDTH 10
@@ -52,19 +59,38 @@ typedef struct Pose {
 #endif
 
 #ifdef HAS_LIDAR
-#define NUM_LIDAR_SCANS 10 // Numer of datapoints inside the LiDAR scan
+#define NUM_LIDAR_SCANS 100 // Numer of datapoints inside the LiDAR scan
 #define LIDAR_FOV       (2*PI) // The view of the lidar in radians
+#define LIDAR_RANGE     1.0f // Define lidar range in meters 
 
 #endif
 
-#define REAL_GRID_SIZE 0.3 // Represents the true size of a grid cell in meters
+#define REAL_GRID_SIZE 0.3f // Represents the true size of a grid cell in meters
 #define REAL_GRID_SIZE_2 REAL_GRID_SIZE / 2.0f // Represents the true size of a grid cell in meters
 
 #define PIXEL_SCALE  GRID_SIZE / REAL_GRID_SIZE // Represents the gridsize to pixel scaling for the motion controlling in meters
 
-#define REAL_PLAYER_SIZE 0.2 // Dimension of the robot in meters
+#define REAL_PLAYER_SIZE 0.2f // Dimension of the robot in meters
 #define REAL_PLAYER_SIZE_2 REAL_PLAYER_SIZE / 2.0f
 #define PLAYER_SIZE REAL_PLAYER_SIZE * PIXEL_SCALE // Size of the robot in pixel size
+
+const GridVector2 SnapToGridVec(const Vector2* pose){
+	return (GridVector2) {(int) floorf(pose->x / REAL_GRID_SIZE), (int) floorf(pose->y / REAL_GRID_SIZE)};
+}
+
+const GridVector2 SnapToGridPose(const Pose* pose){
+	return (GridVector2) {(int) floorf(pose->x / REAL_GRID_SIZE), (int)floorf(pose->y / REAL_GRID_SIZE)};
+}
+
+GridVector2 GridVector2Add(const GridVector2 v1,const GridVector2 v2)
+{
+    return (GridVector2) { v1.x + v2.x, v1.y + v2.y };
+}
+
+Vector2 Vector2MultiplyScalar(const Vector2 v1,const float v2)
+{
+    return (Vector2)  { (float)v1.x*v2, (float) v1.y*v2 };
+}
 
 
 void GenerateObstacles(int occupancyGrid[][GRID_HEIGHT], int obtacleLocations[][2], Rectangle * obstacleCollisions, Vector2 obstacleVertices[][4]) {
@@ -161,18 +187,132 @@ void CameraLogic(Camera2D* camera, int* zoomMode){
 }
 
 
-static float   lidarDistances[NUM_LIDAR_SCANS];
-static Vector2 lidarHits[NUM_LIDAR_SCANS];
+#ifdef HAS_LIDAR
+// static float   lidarDistances[NUM_LIDAR_SCANS];
+// static Vector2 lidarHits[NUM_LIDAR_SCANS];
+
+// Ray-edge intersection: returns t along ray (dir normalized) or FLT_MAX if none
+static inline float RayEdgeIntersect(
+    const Vector2 orig, const Vector2 dir,
+    const Vector2 a, const Vector2 b)
+{
+    // Compute intersection of ray (orig + t*dir) with segment a->b
+    float ex = b.x - a.x;
+    float ey = b.y - a.y;
+    // denom = cross(edge, -dir)
+    float denom = ex * -dir.y - ey * -dir.x;
+    if (fabsf(denom) < 1e-6f) return FLT_MAX;
+    float dx = a.x - orig.x;
+    float dy = a.y - orig.y;
+    float s = (dx * -dir.y - dy * -dir.x) / denom;
+    if (s < 0.0f || s > 1.0f) return FLT_MAX;
+    float t = (dx * ey - dy * ex) / denom;
+    return (t >= 0.0f) ? t : FLT_MAX;
+}
+
+#define LIDAR_STEP LIDAR_FOV / ((float) NUM_LIDAR_SCANS - 1)
+
+// DDA grid traversal: cast ray in grid, test encountered obstacle cells
+void PerformRayCasting(Vector2 origin, float startAng, float* distances, Vector2* hits, const int occupancyGrid[][GRID_HEIGHT], const Vector2 obstacleVerts[][4]) {
+    for(int i=0;i<NUM_LIDAR_SCANS;i++) {
+        float ang = startAng + i*LIDAR_STEP;
+        Vector2 dir = { cosf(ang), sinf(ang) };
+        // initialize ray position in grid coords
+
+        int gx = (int)(origin.x * (1.0f / REAL_GRID_SIZE));
+        int gy = (int)(origin.y * (1.0f / REAL_GRID_SIZE));
+        
+		// DDA setup
+
+        int stepX = (dir.x >= 0.0f) ? 1 : -1;
+        int stepY = (dir.y >= 0.0f) ? 1 : -1;
+
+         float inv_dx = (dir.x != 0.0f) ? (1.0f / dir.x) : 0.0f;
+        float inv_dy = (dir.y != 0.0f) ? (1.0f / dir.y) : 0.0f;
+
+        float tDeltaX = (dir.x != 0.0f) ? fabsf(REAL_GRID_SIZE * inv_dx) : FLT_MAX;
+        float tDeltaY = (dir.y != 0.0f) ? fabsf(REAL_GRID_SIZE * inv_dy) : FLT_MAX;
+
+        float cellOriginX = gx * REAL_GRID_SIZE;
+        float cellOriginY = gy * REAL_GRID_SIZE;
+        float rx = origin.x - cellOriginX;
+        float ry = origin.y - cellOriginY;
+
+        float tMaxX = (dir.x > 0.0f)
+            ? ((REAL_GRID_SIZE - rx) * inv_dx)
+            : ((dir.x < 0.0f) ? (-rx * inv_dx) : FLT_MAX);
+        float tMaxY = (dir.y > 0.0f)
+            ? ((REAL_GRID_SIZE - ry) * inv_dy)
+            : ((dir.y < 0.0f) ? (-ry * inv_dy) : FLT_MAX);
+
+        // initialize best hit at max range
+        float maxR = LIDAR_RANGE;
+        float bestT = maxR;
+        Vector2 bestHit = { origin.x + dir.x * maxR,
+                            origin.y + dir.y * maxR };
+
+        float traveled = 0.0f;
+        // traverse grid
+        while (traveled < bestT) {
+            // cell check
+            if ((unsigned)gx < GRID_WIDTH && (unsigned)gy < GRID_HEIGHT) {
+                int cellId = occupancyGrid[gx][gy];
+                if (cellId >= 0) {
+                    // obstacle edges
+                    const Vector2 *poly = obstacleVerts[cellId];
+                    for (int e = 0; e < 4; ++e) {
+                        float t = RayEdgeIntersect(
+                            origin, dir,
+                            poly[e], poly[(e + 1) & 3]
+                        );
+                        if (t < bestT) {
+                            bestT = t;
+                            bestHit.x = origin.x + dir.x * t;
+                            bestHit.y = origin.y + dir.y * t;
+                        }
+                    }
+                }
+
+                // advance
+                if (tMaxX < tMaxY) {
+                    gx += stepX;
+                    traveled = tMaxX;
+                    tMaxX += tDeltaX;
+                } else {
+                    gy += stepY;
+                    traveled = tMaxY;
+                    tMaxY += tDeltaY;
+                }
+            } else break;
+        }
+        // finalize
+        distances[i] = (bestT < maxR) ? bestT : -1.0f;
+        hits[i] = bestHit;
+    }
+}
 
 #if NUM_OBSTACLES > 0
-void UpdateLidarScan(const Pose *robotPosition, float* lidarScan, const Rectangle* obstacleCollisions, const Rectangle* worldBorder){
+void UpdateLidarScan(const Pose *robotPosition, float* lidarScan, Vector2* lidarHits, const Vector2* worldBorder, const int occupancyGrid[][GRID_HEIGHT],const Vector2 obstacleVerts[][4]){
+	//TODO Have Ray Casting Performed such that it gets the closest hit point to an obstacle and populates the lidarScan array
+    Vector2 origin = { robotPosition->x, robotPosition->y };
+    float startAng = robotPosition->theta - 0.5f * LIDAR_FOV;
+
+	PerformRayCasting(origin, startAng, lidarScan, lidarHits, occupancyGrid, obstacleVerts);
+}
+#else 
+void UpdateLidarScan(const Pose *robotPosition, float* lidarScan, Vector2* lidarHits, const Vector2* worldBorder){
 	//TODO Have Ray Casting Performed such that it gets the closest hit point to an obstacle and populates the lidarScan array
 
 }
-#else 
-void UpdateLidarScan(const Pose *robotPosition, float* lidarScan, const Rectangle* worldBorder){
-	//TODO Have Ray Casting Performed such that it gets the closest hit point to an obstacle and populates the lidarScan array
+#endif
 
+
+void DrawLiDAR(const Pose *robotPosition, float lidarScan[], Vector2 lidarHits[]){
+	Vector2 player = (Vector2){robotPosition->x * PIXEL_SCALE, robotPosition->y* PIXEL_SCALE};
+
+	for(int i =0; i < NUM_LIDAR_SCANS; ++i){
+		DrawLineEx(player, Vector2MultiplyScalar(lidarHits[i], PIXEL_SCALE), 2.0f ,GREEN);
+	}
 }
 #endif
 
@@ -333,11 +473,6 @@ void RandomPlayerStart(Pose* playerPosition){
 }
 #endif
 
-typedef struct GridVector2 {
-	int x;
-	int y;
-} GridVector2;
-
 #define NUM_NEIGHBOR_CHECK 8
 // 8 Connected neighbors corners
 const GridVector2 neighbors[NUM_NEIGHBOR_CHECK] = {
@@ -376,23 +511,6 @@ const bool GetObstacle(const GridVector2* gridCoordinate, const int occupancyGri
 	return false;
 }
 
-const GridVector2 SnapToGridVec(const Vector2* pose){
-	return (GridVector2) {(int) floorf(pose->x / REAL_GRID_SIZE), (int) floorf(pose->y / REAL_GRID_SIZE)};
-}
-
-const GridVector2 SnapToGridPose(const Pose* pose){
-	return (GridVector2) {(int) floorf(pose->x / REAL_GRID_SIZE), (int)floorf(pose->y / REAL_GRID_SIZE)};
-}
-
-GridVector2 GridVector2Add(const GridVector2 v1,const GridVector2 v2)
-{
-    return (GridVector2) { v1.x + v2.x, v1.y + v2.y };
-}
-
-Vector2 Vector2MultiplyScalar(const Vector2 v1,const float v2)
-{
-    return (Vector2)  { v1.x*v2, v1.y*v2 };
-}
 
 #define CLOSEST_SQUARE_THRESHOLD sqrtf(2) * REAL_GRID_SIZE_2
 
@@ -505,12 +623,19 @@ int main ()
 	
 	Pose robotPosition = {(GRID_SIZE) / 2.0f, (GRID_SIZE)  / 2.0f, 0};
 	Vector2 robotVertices[4] = {0};
-	Vector2 robotVelocity = {0.1, 0.1};
+	Vector2 robotVelocity = {0.0, 0.1};
 
 
-	const Rectangle worldMap = {0, 0, GRID_SIZE * GRID_WIDTH, GRID_SIZE * GRID_HEIGHT};
+	const Vector2 worldMap[] = {
+		(Vector2){0, 0},
+		(Vector2){REAL_GRID_SIZE* GRID_WIDTH, 0},
+		(Vector2){REAL_GRID_SIZE* GRID_WIDTH, REAL_GRID_SIZE* GRID_HEIGHT},
+		(Vector2){0, REAL_GRID_SIZE* GRID_HEIGHT},
+	};
 
 	#if NUM_OBSTACLES > 0
+	
+	// TODO Make these static global variables
 	int occupancyGrid[GRID_WIDTH][GRID_HEIGHT];
 
 	for(int i = 0; i < GRID_WIDTH; ++i){
@@ -519,6 +644,8 @@ int main ()
 		}
 	}
 
+	
+	// TODO Make these static global variables
 	int obstacleLocations [NUM_OBSTACLES][2] = {0}; // Grid x, y locations of each of the obstacles
 	Rectangle obstacleCollisions [NUM_OBSTACLES];
 	Vector2 obstacleVerticles[NUM_OBSTACLES][4] = {0};
@@ -534,7 +661,10 @@ int main ()
 	#endif 
 
 	#ifdef HAS_LIDAR
-	float lidarScan[NUM_LIDAR_SCANS] = {0.0};
+	// TODO Make these static global variables
+
+	float lidarScan[NUM_LIDAR_SCANS] = {0.0f};
+	Vector2 lidarHits[NUM_LIDAR_SCANS] = {0};
 	#endif
 
 
@@ -588,9 +718,9 @@ int main ()
 
 		#ifdef HAS_LIDAR
 		#if NUM_OBSTACLES > 0
-		UpdateLidarScan(&robotPosition, lidarScan, obstacleCollisions, &worldMap);
+		UpdateLidarScan(&robotPosition, lidarScan, lidarHits, worldMap, occupancyGrid, obstacleVerticles);
 		#else
-		UpdateLidarScan(&robotPosition, lidarScan, &worldMap);
+		UpdateLidarScan(&robotPosition, lidarScan, worldMap);
 		#endif
 		#endif
 
@@ -613,6 +743,9 @@ int main ()
 					DrawObstacles(obstacleCollisions);
 				#endif	
 
+				#ifdef HAS_LIDAR 
+					DrawLiDAR(&robotPosition, lidarScan, lidarHits);
+				#endif
 				// Draw player
 				DrawPlayer(&robotPosition, &robotVelocity, robotVertices, hasCollided);
 
