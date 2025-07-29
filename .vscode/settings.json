@@ -23,6 +23,13 @@
 		"xmemory": "c",
 		"xstring": "c",
 		"xutility": "c",
-		"resource_dir.h": "c"
+		"resource_dir.h": "c",
+		"atomic": "c",
+		"concepts": "c",
+		"iterator": "c",
+		"memory": "c",
+		"system_error": "c",
+		"tuple": "c",
+		"type_traits": "c"
 	}
 }

@@ -30,13 +30,17 @@ typedef struct GridVector2 {
 	int y;
 } GridVector2;
 
-
-#define NUM_OBSTACLES 10
+// Have a border of obstacles all around the grid edge
+#define HAS_BORDER true 
+#define INNER_OBSTACLES 0
 
 #define GRID_WIDTH 10
 #define GRID_HEIGHT 20
 #define SCREEN_SIZE 800
 #define SPACING 10
+
+#define OUTER_OBSTACLES  (HAS_BORDER? GRID_HEIGHT * 2 + (GRID_WIDTH - 2) * 2 : 0) 
+#define NUM_OBSTACLES INNER_OBSTACLES + OUTER_OBSTACLES
 
 // If you want to manually specify the grid spacing for vizualization uncomment this line
 // #define GRID_SIZE 20
@@ -84,34 +88,68 @@ Vector2 Vector2MultiplyScalar(const Vector2 v1,const float v2)
 }
 
 
+void SetObstacles(int i, int rx, int ry , int occupancyGrid[][GRID_HEIGHT], int obtacleLocations[][2], Rectangle * obstacleCollisions, Vector2 obstacleVertices[][4]){
+	occupancyGrid[rx][ry] = i;
+
+	obtacleLocations[i][0] = rx;      // Returns a pseudo-random integer between 0 and gridWidth.
+	obtacleLocations[i][1] = ry; // Returns a pseudo-random integer between 0 and gridHeight.
+
+	obstacleCollisions[i].x = (float)rx * GRID_SIZE;
+	obstacleCollisions[i].y = (float)ry * GRID_SIZE;
+	obstacleCollisions[i].width = (float) GRID_SIZE;
+	obstacleCollisions[i].height = (float) GRID_SIZE;
+
+	const float realRx = rx * REAL_GRID_SIZE;
+	const float realRy = ry * REAL_GRID_SIZE;
+
+	obstacleVertices[i][0] = (Vector2){realRx                 , realRy};
+	obstacleVertices[i][1] = (Vector2){realRx + REAL_GRID_SIZE, realRy};
+	obstacleVertices[i][2] = (Vector2){realRx + REAL_GRID_SIZE, realRy + REAL_GRID_SIZE};
+	obstacleVertices[i][3] = (Vector2){realRx                 , realRy + REAL_GRID_SIZE};
+
+	printf("Obstacle %d: (%d, %d)\n", i, rx, ry);		
+}
+
 void GenerateObstacles(int occupancyGrid[][GRID_HEIGHT], int obtacleLocations[][2], Rectangle * obstacleCollisions, Vector2 obstacleVertices[][4]) {
-	for(int i= 0; i < NUM_OBSTACLES; ++i){
+	int i = 0;
+
+	#if HAS_BORDER
+		for(int c = 0; c < GRID_WIDTH; ++i, ++c)
+		{
+			SetObstacles(i, c, 0, occupancyGrid, obtacleLocations, obstacleCollisions, obstacleVertices);
+		}
+
+		for(int c = 0; c < GRID_WIDTH; ++i, ++c)
+		{
+			SetObstacles(i, c, GRID_HEIGHT - 1, occupancyGrid, obtacleLocations, obstacleCollisions, obstacleVertices);
+		}
+
+		for(int r = 1; r < GRID_HEIGHT - 1; ++i, ++r)
+		{
+			SetObstacles(i, 0, r, occupancyGrid, obtacleLocations, obstacleCollisions, obstacleVertices);
+		}
+
+		for(int r = 1; r < GRID_HEIGHT - 1; ++i, ++r)
+		{
+			SetObstacles(i, GRID_WIDTH - 1, r, occupancyGrid, obtacleLocations, obstacleCollisions, obstacleVertices);
+		}
+	#endif
+
+	for(; i < NUM_OBSTACLES; ++i){
 		int rx, ry;
 
 		do{
+			#if HAS_BORDER
 			rx = rand() % GRID_WIDTH; 
-			ry = rand() % GRID_HEIGHT; 
+			ry = rand() % GRID_HEIGHT;
+			#else
+			// Small optimization to ensure that it does not try to sample from inside the borders since thos will always be present
+			rx = rand() % (GRID_WIDTH - 2) + 1; 
+			ry = rand() % (GRID_HEIGHT - 2) + 1;
+			#endif
 		}while(occupancyGrid[rx][ry] != -1);
 
-		occupancyGrid[rx][ry] = i;
-
-		obtacleLocations[i][0] = rx;      // Returns a pseudo-random integer between 0 and gridWidth.
-		obtacleLocations[i][1] = ry; // Returns a pseudo-random integer between 0 and gridHeight.
-
-		obstacleCollisions[i].x = (float)rx * GRID_SIZE;
-		obstacleCollisions[i].y = (float)ry * GRID_SIZE;
-		obstacleCollisions[i].width = (float) GRID_SIZE;
-		obstacleCollisions[i].height = (float) GRID_SIZE;
-
-		const float realRx = rx * REAL_GRID_SIZE;
-		const float realRy = ry * REAL_GRID_SIZE;
-
-		obstacleVertices[i][0] = (Vector2){realRx                 , realRy};
-		obstacleVertices[i][1] = (Vector2){realRx + REAL_GRID_SIZE, realRy};
-		obstacleVertices[i][2] = (Vector2){realRx + REAL_GRID_SIZE, realRy + REAL_GRID_SIZE};
-		obstacleVertices[i][3] = (Vector2){realRx                 , realRy + REAL_GRID_SIZE};
-
-		printf("Obstacle %d: (%d, %d)\n", i, rx, ry);		
+		SetObstacles(i, rx, ry, occupancyGrid, obtacleLocations, obstacleCollisions, obstacleVertices);
 	}
 }
 
