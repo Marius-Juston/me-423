@@ -51,7 +51,7 @@ typedef struct GridVector2 {
 
 #ifdef HAS_LIDAR
 #define NUM_LIDAR_SCANS 100 // Numer of datapoints inside the LiDAR scan
-#define LIDAR_FOV       (2*PI) // The view of the lidar in radians
+#define LIDAR_FOV       160.0f * DEG2RAD // The view of the lidar in radians
 #define LIDAR_RANGE     1.0f // Define lidar range in meters 
 
 #endif
@@ -183,117 +183,93 @@ void CameraLogic(Camera2D* camera, int* zoomMode){
 // static Vector2 lidarHits[NUM_LIDAR_SCANS];
 
 // Ray-edge intersection: returns t along ray (dir normalized) or FLT_MAX if none
-static inline float RayEdgeIntersect(
-    const Vector2 orig, const Vector2 dir,
-    const Vector2 a, const Vector2 b)
+// Performs a fast Ray-Axis-Aligned Bounding Box (AABB) intersection test.
+// It's faster than checking each of the 4 edges individually.
+// Returns the distance 't' along the ray to the first hit, or FLT_MAX if no hit.
+static inline float RayAABBIntersect(
+    const Vector2 orig, const Vector2 inv_dir,
+    const Vector2 box_min, const Vector2 box_max)
 {
-    // Compute intersection of ray (orig + t*dir) with segment a->b
-    float ex = b.x - a.x;
-    float ey = b.y - a.y;
-    // denom = cross(edge, -dir)
-    float denom = ex * -dir.y - ey * -dir.x;
-    if (fabsf(denom) < 1e-6f) return FLT_MAX;
-    float dx = a.x - orig.x;
-    float dy = a.y - orig.y;
-    float s = (dx * -dir.y - dy * -dir.x) / denom;
-    if (s < 0.0f || s > 1.0f) return FLT_MAX;
-    float t = (dx * ey - dy * ex) / denom;
-    return (t >= 0.0f) ? t : FLT_MAX;
+    float tx1 = (box_min.x - orig.x) * inv_dir.x;
+    float tx2 = (box_max.x - orig.x) * inv_dir.x;
+
+    float tmin = fminf(tx1, tx2);
+    float tmax = fmaxf(tx1, tx2);
+
+    float ty1 = (box_min.y - orig.y) * inv_dir.y;
+    float ty2 = (box_max.y - orig.y) * inv_dir.y;
+
+    tmin = fmaxf(tmin, fminf(ty1, ty2));
+    tmax = fminf(tmax, fmaxf(ty1, ty2));
+    
+    // if tmax < tmin, ray misses the box
+    // if tmax < 0, box is behind the ray's origin
+    if (tmax < tmin || tmax < 0.0f)
+    {
+        return FLT_MAX;
+    }
+    
+    // If the ray's origin is inside the box, tmin will be negative. We are interested
+    // in the first positive intersection distance, so we return tmin only if it's positive.
+    return tmin > 0.0f ? tmin : FLT_MAX;
 }
 
 #define LIDAR_STEP LIDAR_FOV / ((float) NUM_LIDAR_SCANS - 1)
 
-// DDA grid traversal: cast ray in grid, test encountered obstacle cells
-void PerformRayCasting(Vector2 origin, float startAng, float* distances, Vector2* hits, const int occupancyGrid[][GRID_HEIGHT], const Vector2 obstacleVerts[][4]) {
-    for(int i=0;i<NUM_LIDAR_SCANS;i++) {
-        float ang = startAng + i*LIDAR_STEP;
-        Vector2 dir = { cosf(ang), sinf(ang) };
-        // initialize ray position in grid coords
-
-        int gx = (int)(origin.x * (1.0f / REAL_GRID_SIZE));
-        int gy = (int)(origin.y * (1.0f / REAL_GRID_SIZE));
-        
-		// DDA setup
-
-        int stepX = (dir.x >= 0.0f) ? 1 : -1;
-        int stepY = (dir.y >= 0.0f) ? 1 : -1;
-
-         float inv_dx = (dir.x != 0.0f) ? (1.0f / dir.x) : 0.0f;
-        float inv_dy = (dir.y != 0.0f) ? (1.0f / dir.y) : 0.0f;
-
-        float tDeltaX = (dir.x != 0.0f) ? fabsf(REAL_GRID_SIZE * inv_dx) : FLT_MAX;
-        float tDeltaY = (dir.y != 0.0f) ? fabsf(REAL_GRID_SIZE * inv_dy) : FLT_MAX;
-
-        float cellOriginX = gx * REAL_GRID_SIZE;
-        float cellOriginY = gy * REAL_GRID_SIZE;
-        float rx = origin.x - cellOriginX;
-        float ry = origin.y - cellOriginY;
-
-        float tMaxX = (dir.x > 0.0f)
-            ? ((REAL_GRID_SIZE - rx) * inv_dx)
-            : ((dir.x < 0.0f) ? (-rx * inv_dx) : FLT_MAX);
-        float tMaxY = (dir.y > 0.0f)
-            ? ((REAL_GRID_SIZE - ry) * inv_dy)
-            : ((dir.y < 0.0f) ? (-ry * inv_dy) : FLT_MAX);
-
-        // initialize best hit at max range
-        float maxR = LIDAR_RANGE;
-        float bestT = maxR;
-        Vector2 bestHit = { origin.x + dir.x * maxR,
-                            origin.y + dir.y * maxR };
-
-        float traveled = 0.0f;
-        // traverse grid
-        while (traveled < bestT) {
-            // cell check
-            if ((unsigned)gx < GRID_WIDTH && (unsigned)gy < GRID_HEIGHT) {
-                int cellId = occupancyGrid[gx][gy];
-                if (cellId >= 0) {
-                    // obstacle edges
-                    const Vector2 *poly = obstacleVerts[cellId];
-                    for (int e = 0; e < 4; ++e) {
-                        float t = RayEdgeIntersect(
-                            origin, dir,
-                            poly[e], poly[(e + 1) & 3]
-                        );
-                        if (t < bestT) {
-                            bestT = t;
-                            bestHit.x = origin.x + dir.x * t;
-                            bestHit.y = origin.y + dir.y * t;
-                        }
-                    }
-                }
-
-                // advance
-                if (tMaxX < tMaxY) {
-                    gx += stepX;
-                    traveled = tMaxX;
-                    tMaxX += tDeltaX;
-                } else {
-                    gy += stepY;
-                    traveled = tMaxY;
-                    tMaxY += tDeltaY;
-                }
-            } else break;
-        }
-        // finalize
-        distances[i] = (bestT < maxR) ? bestT : -1.0f;
-        hits[i] = bestHit;
-    }
-}
 
 #if NUM_OBSTACLES > 0
-void UpdateLidarScan(const Pose *robotPosition, float* lidarScan, Vector2* lidarHits, const Vector2* worldBorder, const int occupancyGrid[][GRID_HEIGHT],const Vector2 obstacleVerts[][4]){
-	//TODO Have Ray Casting Performed such that it gets the closest hit point to an obstacle and populates the lidarScan array
-    Vector2 origin = { robotPosition->x, robotPosition->y };
-    float startAng = robotPosition->theta - 0.5f * LIDAR_FOV;
 
-	PerformRayCasting(origin, startAng, lidarScan, lidarHits, occupancyGrid, obstacleVerts);
+void UpdateLidarScan(const Pose *robotPosition, float* lidarScan, Vector2* lidarHits, const Vector2* worldBorder, const int occupancyGrid[][GRID_HEIGHT], const Vector2 obstacleVerts[][4]){
+    const Vector2 origin = { robotPosition->x, robotPosition->y };
+    const float startAng = robotPosition->theta - 0.5f * LIDAR_FOV;
+
+    // For each ray in the LIDAR scan...
+    for (int i = 0; i < NUM_LIDAR_SCANS; ++i) {
+        const float ang = startAng + i * LIDAR_STEP;
+        const Vector2 dir = { cosf(ang), sinf(ang) };
+        const Vector2 inv_dir = { 1.0f / dir.x, 1.0f / dir.y };
+
+        float closest_t = LIDAR_RANGE; // Initialize with the maximum possible range
+
+        // Brute-force check: test this ray against EVERY obstacle in the world.
+        for (int j = 0; j < NUM_OBSTACLES; ++j) {
+            // The obstacle's Axis-Aligned Bounding Box (AABB) is defined by its
+            // bottom-left (vertex 0) and top-right (vertex 2) corners.
+            const Vector2 box_min = obstacleVerts[j][0];
+            const Vector2 box_max = obstacleVerts[j][2];
+
+            // Perform the intersection test for this ray and this obstacle.
+            const float t = RayAABBIntersect(origin, inv_dir, box_min, box_max);
+
+            // If this hit is closer than any we've seen before for this ray, record it.
+            if (t < closest_t) {
+                closest_t = t;
+            }
+        }
+
+        // After checking all obstacles, we have the definitive closest hit for this ray.
+        if (closest_t < LIDAR_RANGE) {
+            lidarScan[i] = closest_t;
+            lidarHits[i] = (Vector2){ origin.x + dir.x * closest_t, origin.y + dir.y * closest_t };
+        } else {
+            // No hit was found within range.
+            lidarScan[i] = -1.0f;
+            lidarHits[i] = (Vector2){ origin.x + dir.x * LIDAR_RANGE, origin.y + dir.y * LIDAR_RANGE };
+        }
+    }
 }
 #else 
 void UpdateLidarScan(const Pose *robotPosition, float* lidarScan, Vector2* lidarHits, const Vector2* worldBorder){
-	//TODO Have Ray Casting Performed such that it gets the closest hit point to an obstacle and populates the lidarScan array
+    const Vector2 origin = { robotPosition->x, robotPosition->y };
+    const float startAng = robotPosition->theta - 0.5f * LIDAR_FOV;
 
+    // If there are no obstacles, all rays are misses.
+    for (int i = 0; i < NUM_LIDAR_SCANS; ++i) {
+        const float ang = startAng + i * LIDAR_STEP;
+        const Vector2 dir = { cosf(ang), sinf(ang) };
+        lidarScan[i] = -1.0f;
+        lidarHits[i] = (Vector2){ origin.x + dir.x * LIDAR_RANGE, origin.y + dir.y * LIDAR_RANGE };
+    }
 }
 #endif
 
@@ -302,7 +278,7 @@ void DrawLiDAR(const Pose *robotPosition, float lidarScan[], Vector2 lidarHits[]
 	Vector2 player = (Vector2){robotPosition->x * PIXEL_SCALE, robotPosition->y* PIXEL_SCALE};
 
 	for(int i =0; i < NUM_LIDAR_SCANS; ++i){
-		DrawLineEx(player, Vector2MultiplyScalar(lidarHits[i], PIXEL_SCALE), 2.0f ,GREEN);
+		DrawLineEx(player, Vector2MultiplyScalar(lidarHits[i], PIXEL_SCALE), 2.0f ,lidarScan[i] > 0? PURPLE: GREEN);
 	}
 }
 #endif
@@ -419,7 +395,7 @@ void DrawPlayer(const Pose* robotPosition, const Vector2* robotVelocity, const V
 	Vector2 end = {robot.x +  PLAYER_SIZE /2.0f * cosf(robotPosition->theta), 
 		           robot.y +  PLAYER_SIZE /2.0f * sinf(robotPosition->theta)};
 	
-	DrawLineEx(start, end, 2, GREEN);
+	DrawLineEx(start, end, 2, BLUE);
 
 	for(int i = 0; i < 4; ++i){
 		DrawLineEx((Vector2){
@@ -711,7 +687,7 @@ int main ()
 		#if NUM_OBSTACLES > 0
 		UpdateLidarScan(&robotPosition, lidarScan, lidarHits, worldMap, occupancyGrid, obstacleVerticles);
 		#else
-		UpdateLidarScan(&robotPosition, lidarScan, worldMap);
+		UpdateLidarScan(&robotPosition, lidarScan, lidarHits, worldMap);
 		#endif
 		#endif
 
