@@ -734,11 +734,11 @@ int main ()
 			GuiSliderBar((Rectangle){ 600, 120, 120, 20 }, "w", TextFormat("%.2f", robotVelocity.y), &robotVelocity.y, -0.2, 0.2);
             
             // Draw mouse reference
-            //Vector2 mousePos = GetWorldToScreen2D(GetMousePosition(), camera);
+            Vector2 mousePos = GetScreenToWorld2D(GetMousePosition(), camera);
             DrawCircleV(GetMousePosition(), 4, DARKGRAY);
 
 			//TODO Make the coordinate be based on real coordinate position on camera position
-            DrawTextEx(GetFontDefault(), TextFormat("[%i, %i]", GetMouseX(), GetMouseY()),  
+            DrawTextEx(GetFontDefault(), TextFormat("[%f, %f]", mousePos.x / ((float)GRID_SIZE), -mousePos.y / ((float)GRID_SIZE)),  
                 Vector2Add(GetMousePosition(), (Vector2){ -44, -24 }), 20, 2, BLACK);
 
             DrawText("[1][2] Select mouse zoom mode (Wheel or Move)", 20, 20, 20, DARKGRAY);
