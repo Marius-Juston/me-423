@@ -30,6 +30,7 @@
 		"memory": "c",
 		"system_error": "c",
 		"tuple": "c",
-		"type_traits": "c"
+		"type_traits": "c",
+		"student.h": "c"
 	}
 }

@@ -13,6 +13,8 @@
 #include "resource_dir.h"	// utility header for SearchAndSetResourceDir
 #include <math.h>
 
+#include "student.h"
+
 // static inline float maxd(const int a, const int b) {
 //     return (a > b ? a : b);
 // }
@@ -628,7 +630,7 @@ int main ()
 	
 	Pose robotPosition = {(GRID_SIZE) / 2.0f, (GRID_SIZE)  / 2.0f, 0};
 	Vector2 robotVertices[4] = {0};
-	Vector2 robotVelocity = {0.0, 0.1};
+	Vector2 robotVelocity = {0.0, 0.0};
 
 	#if NUM_OBSTACLES > 0
 	
