@@ -219,7 +219,7 @@ static inline float RayAABBIntersect(
 
 #if NUM_OBSTACLES > 0
 
-void UpdateLidarScan(const Pose *robotPosition, float* lidarScan, Vector2* lidarHits, const Vector2* worldBorder, const int occupancyGrid[][GRID_HEIGHT], const Vector2 obstacleVerts[][4]){
+void UpdateLidarScan(const Pose *robotPosition, float* lidarScan, Vector2* lidarHits, const int occupancyGrid[][GRID_HEIGHT], const Vector2 obstacleVerts[][4]){
     const Vector2 origin = { robotPosition->x, robotPosition->y };
     const float startAng = robotPosition->theta - 0.5f * LIDAR_FOV;
 
@@ -259,7 +259,7 @@ void UpdateLidarScan(const Pose *robotPosition, float* lidarScan, Vector2* lidar
     }
 }
 #else 
-void UpdateLidarScan(const Pose *robotPosition, float* lidarScan, Vector2* lidarHits, const Vector2* worldBorder){
+void UpdateLidarScan(const Pose *robotPosition, float* lidarScan, Vector2* lidarHits){
     const Vector2 origin = { robotPosition->x, robotPosition->y };
     const float startAng = robotPosition->theta - 0.5f * LIDAR_FOV;
 
@@ -592,14 +592,6 @@ int main ()
 	Vector2 robotVertices[4] = {0};
 	Vector2 robotVelocity = {0.0, 0.1};
 
-
-	const Vector2 worldMap[] = {
-		(Vector2){0, 0},
-		(Vector2){REAL_GRID_SIZE* GRID_WIDTH, 0},
-		(Vector2){REAL_GRID_SIZE* GRID_WIDTH, REAL_GRID_SIZE* GRID_HEIGHT},
-		(Vector2){0, REAL_GRID_SIZE* GRID_HEIGHT},
-	};
-
 	#if NUM_OBSTACLES > 0
 	
 	// TODO Make these static global variables
@@ -632,6 +624,8 @@ int main ()
 
 	float lidarScan[NUM_LIDAR_SCANS] = {0.0f};
 	Vector2 lidarHits[NUM_LIDAR_SCANS] = {0};
+		
+	bool showLiDAR = true;
 	#endif
 
 
@@ -667,9 +661,9 @@ int main ()
 	{
 		if (IsKeyPressed(KEY_R)){
 			#if NUM_OBSTACLES > 0
-			RandomPlayerStart(&robotPosition, occupancyGrid);
+				RandomPlayerStart(&robotPosition, occupancyGrid);
 			#else
-			RandomPlayerStart(&robotPosition);
+				RandomPlayerStart(&robotPosition);
 			#endif 
 		}
 
@@ -684,11 +678,11 @@ int main ()
 		#endif 
 
 		#ifdef HAS_LIDAR
-		#if NUM_OBSTACLES > 0
-		UpdateLidarScan(&robotPosition, lidarScan, lidarHits, worldMap, occupancyGrid, obstacleVerticles);
-		#else
-		UpdateLidarScan(&robotPosition, lidarScan, lidarHits, worldMap);
-		#endif
+			#if NUM_OBSTACLES > 0
+				UpdateLidarScan(&robotPosition, lidarScan, lidarHits, occupancyGrid, obstacleVerticles);
+			#else
+				UpdateLidarScan(&robotPosition, lidarScan, lidarHits);
+			#endif
 		#endif
 
 		//----------------------------------------------------------------------------------
@@ -711,7 +705,9 @@ int main ()
 				#endif	
 
 				#ifdef HAS_LIDAR 
-					DrawLiDAR(&robotPosition, lidarScan, lidarHits);
+					if(showLiDAR){
+						DrawLiDAR(&robotPosition, lidarScan, lidarHits);
+					}
 				#endif
 				// Draw player
 				DrawPlayer(&robotPosition, &robotVelocity, robotVertices, hasCollided);
@@ -729,10 +725,14 @@ int main ()
                 DrawWorldGridText();
             EndMode2D();
 
-			GuiSliderBar((Rectangle){ 600, 40, 120, 20 }, "dt", TextFormat("%.2f", dt), &dt, -0.2, 0.2);
-			GuiSliderBar((Rectangle){ 600, 80, 120, 20 }, "v", TextFormat("%.2f", robotVelocity.x), &robotVelocity.x, -0.2, 0.2);
-			GuiSliderBar((Rectangle){ 600, 120, 120, 20 }, "w", TextFormat("%.2f", robotVelocity.y), &robotVelocity.y, -0.2, 0.2);
-            
+			GuiSliderBar((Rectangle){ 600, 20, 120, 20 }, "dt", TextFormat("%.2f", dt), &dt, -0.2, 0.2);
+			GuiSliderBar((Rectangle){ 600, 50, 120, 20 }, "v", TextFormat("%.2f", robotVelocity.x), &robotVelocity.x, -0.2, 0.2);
+			GuiSliderBar((Rectangle){ 600, 80, 120, 20 }, "w", TextFormat("%.2f", robotVelocity.y), &robotVelocity.y, -0.2, 0.2);
+
+			#ifdef HAS_LIDAR
+				GuiCheckBox((Rectangle){ 600, 110, 20, 20 }, "Show LiDAR", &showLiDAR);
+            #endif
+
             // Draw mouse reference
             Vector2 mousePos = GetScreenToWorld2D(GetMousePosition(), camera);
             DrawCircleV(GetMousePosition(), 4, DARKGRAY);
